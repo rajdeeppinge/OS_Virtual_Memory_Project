@@ -26,7 +26,7 @@ struct page_table {
 	int nframes;		// no of frames in physical memory
 	int *page_mapping;	// pointer to start of mapping between physical and virtual memory
 	int *page_bits;		// pointer to start of permission bits list 
-	page_fault_handler_t handler;	//
+	page_fault_handler_t handler;	//page fault handle. Will be written by us
 };
 
 
