@@ -1,0 +1,40 @@
+physi mem- page frame
+
+no R and D bit, only Valid and mem prot bits, membits as 0 is taken as not valid
+
+if R right init, but later want to write then allow it to do so by modify the bits.
+
+while removing a dirty page HAVE to write to back to memory
+
+////////////////////////
+useful funcs-
+
+struct disk *disk = disk_open("myvirtualdisk",npages);
+
+struct page_table *pt = page_table_create( npages, nframes, page_fault_handler );
+
+char *virtmem = page_table_get_virtmem(pt);
+
+char *physmem = page_table_get_physmem(pt);
+
+/////////////////////////////
+
+who calls the page fault handler? 
+
+/////////////////
+
+disc_open - each virt page is given a block in disk
+
+note we are not actually using secondary mem where extra pages are actually present. We are
+using malloc in the virtual disk which is actually on the RAM. So we will be using virt mem of 
+the system while simulating virtual memory! The disk will actually be on RAM!
+
+///////////// disk imple as a file //////////
+
+the virtual disc is actually a file with exactly capacity as nblocks*blocksiZe.
+
+1 block for 1 page kept in secondary memory.
+
+
+
+

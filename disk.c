@@ -59,7 +59,9 @@ struct disk * disk_open( const char *diskname, int nblocks )
 	d->block_size = BLOCK_SIZE;			// BLOCK_SIZE = 4096 as defined in disk.h
 	d->nblocks = nblocks;
 
-	// 
+	// make the file to be precisely of nblocks*block_size size
+	// if it returns <0 then that means an error and the file cannot be truncated
+	// close the file and frre the resources
 	if(ftruncate(d->fd,d->nblocks*d->block_size)<0) {
 		close(d->fd);
 		free(d);

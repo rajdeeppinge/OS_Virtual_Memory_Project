@@ -24,32 +24,42 @@ void page_fault_handler( struct page_table *pt, int page )
 
 int main( int argc, char *argv[] )
 {
+	// check if all command line arguments are given
 	if(argc!=5) {
 		printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
 		return 1;
 	}
 
+	// derive details of the program to run from command line arguments
 	int npages = atoi(argv[1]);
 	int nframes = atoi(argv[2]);
 	const char *program = argv[4];
 
+	// try to create a disk
 	struct disk *disk = disk_open("myvirtualdisk",npages);
+	
+	// if 0 is returned then disk is not created. Therefore show error
 	if(!disk) {
 		fprintf(stderr,"couldn't create virtual disk: %s\n",strerror(errno));
 		return 1;
 	}
 
-
+	// try to cretae page table
 	struct page_table *pt = page_table_create( npages, nframes, page_fault_handler );
+	
+	// if 0 is returned then page table is not created. Therefore show error
 	if(!pt) {
 		fprintf(stderr,"couldn't create page table: %s\n",strerror(errno));
 		return 1;
 	}
 
+	// get pointer to virtual memory from the page table
 	char *virtmem = page_table_get_virtmem(pt);
 
+	// get pointer to physical memory from the page table
 	char *physmem = page_table_get_physmem(pt);
 
+	// run appropriate program base on the command given by the user.
 	if(!strcmp(program,"sort")) {
 		sort_program(virtmem,npages*PAGE_SIZE);
 
@@ -64,6 +74,7 @@ int main( int argc, char *argv[] )
 
 	}
 
+	// clean used resources
 	page_table_delete(pt);
 	disk_close(disk);
 

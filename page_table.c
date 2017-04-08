@@ -40,23 +40,27 @@ struct page_table *the_page_table = 0;
 static void internal_fault_handler( int signum, siginfo_t *info, void *context )
 {
 
+// get appropriate address of fault based on machine
 #ifdef i386
 	char *addr = (char*)(((struct ucontext *)context)->uc_mcontext.cr2);
 #else
 	char *addr = info->si_addr;
 #endif
 
+	// get page table
 	struct page_table *pt = the_page_table;
 
+	// if page table valid
 	if(pt) {
-		int page = (addr-pt->virtmem) / PAGE_SIZE;
+		int page = (addr - pt->virtmem) / PAGE_SIZE;	// find page in virtual memory
 
-		if(page>=0 && page<pt->npages) {
+		if(page>=0 && page<pt->npages) {	// if page is within bounds and is in memory
 			pt->handler(pt,page);
 			return;
 		}
 	}
 
+	// if page table not valid then illegal memory access therefore segmentation fault, abort the action
 	fprintf(stderr,"segmentation fault at address %p\n",addr);
 	abort();
 }
@@ -84,28 +88,60 @@ struct page_table * page_table_create( int npages, int nframes, page_fault_handl
 	pt->fd = open(filename,O_CREAT|O_TRUNC|O_RDWR,0777);
 	if(!pt->fd) return 0;		// if file creation fails, then return 0
 
-	ftruncate(pt->fd,PAGE_SIZE*npages);
 
+	// truncate the file to precisely PAGE_SIZE*npages
+	ftruncate(pt->fd, PAGE_SIZE*npages);
+
+	// Call the unlink function to remove the specified FILE.	//DOUBT
 	unlink(filename);
 
-	pt->physmem = mmap(0,nframes*PAGE_SIZE,PROT_READ|PROT_WRITE,MAP_SHARED,pt->fd,0);
+	// creates a new mapping for (emulating) physical memory in the virtual address space of process
+	pt->physmem = mmap(0, nframes*PAGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, pt->fd, 0);
+	
+	//assign total no of frames
 	pt->nframes = nframes;
 
-	pt->virtmem = mmap(0,npages*PAGE_SIZE,PROT_NONE,MAP_SHARED|MAP_NORESERVE,pt->fd,0);
+	// creates a new mapping for (emulating) virtual memory in the virtual address space of process
+	pt->virtmem = mmap(0, npages*PAGE_SIZE, PROT_NONE, MAP_SHARED|MAP_NORESERVE, pt->fd, 0);
+
+	//assign total no of pages
 	pt->npages = npages;
 
+	// create space to store file bits for all pages
 	pt->page_bits = malloc(sizeof(int)*npages);
+
+	// create space to store page mapping for all possible pages
 	pt->page_mapping = malloc(sizeof(int)*npages);
 
+	// assign page-fault handler
 	pt->handler = handler;
 
+	// make page bits for all pages to be 0
 	for(i=0;i<pt->npages;i++) pt->page_bits[i] = 0;
 
-	sa.sa_sigaction = internal_fault_handler;
-	sa.sa_flags = SA_SIGINFO;
 
+	// set the action the process should take upon receiving a particular signal
+ 	sa.sa_sigaction = internal_fault_handler;	// the specific signal and the action is stored in the internal fault handler.
+
+
+	// sa_flags specifies a set of flags which modify the behavior of the signal.
+	/*	SA_SIGINFO (since Linux 2.2)
+                  The  signal handler takes three arguments, not one.  In this
+                  case, sa_sigaction should  be  set  instead  of  sa_handler.
+                  This flag is meaningful only when establishing a signal han‐
+                  dler.
+	*/
+	sa.sa_flags = SA_SIGINFO;			
+
+
+	//'sigfillset' initializes a signal set to contain all signals. The signal set sa_mask is the set of signals that are blocked when the 		signal handler is being executed. So, when you are executing a signal handler all signals are blocked and you don't have to worry for 		another signal interrupting your signal handler.
 	sigfillset( &sa.sa_mask );
-	sigaction( SIGSEGV, &sa, 0 );
+
+
+	// The  sigaction()  system  call  is used to change the action taken by a process on receipt of a specific signal.
+	sigaction( SIGSEGV, &sa, 0 );	// sigaction system call
+
+	// it works when SIGSEGV is received. His signal means the page is not found in virtual memory
 
 	return pt;
 }
@@ -116,6 +152,7 @@ struct page_table * page_table_create( int npages, int nframes, page_fault_handl
 // This does not delete the disk
 void page_table_delete( struct page_table *pt )
 {
+	// unmap the mappings of physical memory and virtual memory for the virtual address space of the process.
 	munmap(pt->virtmem,pt->npages*PAGE_SIZE);
 	munmap(pt->physmem,pt->nframes*PAGE_SIZE);
 
@@ -158,9 +195,11 @@ void page_table_set_entry( struct page_table *pt, int page, int frame, int bits 
 	// Assign page bits received as parameters
 	pt->page_bits[page] = bits;
 
-	//
-	remap_file_pages(pt->virtmem+page*PAGE_SIZE,PAGE_SIZE,0,frame,0);
-	mprotect(pt->virtmem+page*PAGE_SIZE,PAGE_SIZE,bits);
+	// Create a nonlinear  mapping, that is, a mapping in which the pages of the file are mapped into a nonsequential order in memory.
+	remap_file_pages( pt->virtmem + page * PAGE_SIZE, PAGE_SIZE, 0, frame, 0);
+
+	// changes protection of the page as per the parameter protection bits passed
+	mprotect(pt->virtmem + page * PAGE_SIZE, PAGE_SIZE, bits);
 }
 
 
@@ -168,7 +207,7 @@ void page_table_set_entry( struct page_table *pt, int page, int frame, int bits 
 /*
 Get the frame number and access bits associated with a page.
 "frame" and "bits" must be pointers to integers which will be filled with the current values.
-The bits may be any of PROT_READ, PROT_WRITE, or PROT_EXEC logical-ored together.
+The bits may be any of PROT_READ, PROT_WRITE, or PROT_EXEC logically ORed together.
 */
 void page_table_get_entry( struct page_table *pt, int page, int *frame, int *bits )
 {
