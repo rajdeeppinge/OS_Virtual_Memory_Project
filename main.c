@@ -23,7 +23,7 @@ how to use the page table and disk interfaces.
 
 #include "page_table.h"
 #include "disk.h"
-#include "program.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +49,14 @@ int *fifo_page_queue = NULL;
 
 
 
+// data struct for LRU
+struct page_node
+{
+	int page;
+	struct page_node *nextPage;
+}*head, *tail, *currPage, *newPage, *prevPage;
+
+
 //used to track statistics to print at the end
 int pageFaults = 0;
 int diskReads = 0;
@@ -59,6 +67,14 @@ int findnset_free_frame(int *is_frame_occup_struc,int nframes);
 void random_pra( struct page_table *pt, int page );
 void fifo_pra( struct page_table *pt, int page);
 void custom_pra( struct page_table *pt, int page);
+
+
+
+
+void scan_program( char *data, int length );
+void sort_program( char *data, int length );
+void focus_program( char *data, int length );
+
 
 
 
@@ -180,7 +196,24 @@ void page_fault_handler( struct page_table *pt, int page )
 				newest_page = (newest_page + 1) % nframes;		// make it a circular queue
 			}
 
-
+			if ( !strcmp(PRAlgoToUse, "custom") )
+			{
+				newPage = (struct page_node *) malloc(sizeof(struct page_node));
+				newPage->page = page;
+				newPage->nextPage = NULL;
+	
+				if (head == NULL)
+				{
+					head = newPage;
+					tail = head;
+				}
+				else
+				{
+					tail->nextPage = newPage;
+					tail = newPage;
+				}
+			}
+	
 			// Read data from disk at virtual address given by 'page' to physical memory frame
 			disk_read(disk, page, &physmem[free_loc*PAGE_SIZE]);
 			diskReads++;
@@ -235,7 +268,7 @@ void page_fault_handler( struct page_table *pt, int page )
 		}
     }
 
-	page_table_print(pt);
+//	page_table_print(pt);
 } 
 
 
@@ -289,6 +322,13 @@ int main( int argc, char *argv[] )
 	}
 
 
+	// for LRU
+	if ( !strcmp(PRAlgoToUse, "custom") )
+	{
+		head = NULL;
+		tail = NULL;
+		currPage = head;
+	}
 
 	// try to create a disk
 	disk = disk_open("myvirtualdisk", npages);
@@ -435,6 +475,10 @@ void fifo_pra( struct page_table *pt, int page )
 	// Store info that this page is held in which age frame.
 	// this frame holds this page, inverse of page table.
 	frame_holds_what[(frame_toremove)] = page; // the frame now contains this page.
+
+
+	fifo_page_queue[newest_page] = frame_toremove;
+	newest_page = (newest_page + 1) % nframes;		// make it a circular queue
 }
 
 
@@ -444,7 +488,48 @@ void fifo_pra( struct page_table *pt, int page )
 */ 
 void custom_pra( struct page_table *pt, int page )
 {
+	int frame_no_toremove = head->page;
 
+
+	// NOTE here that page will be replaced only if all frames are full
+	// i.e. pointer to newest page location point actually at oldest page which is to be deleted	
+
+	// shift oldest_page to next oldest_page so that this page is removed from the queue
+
+	currPage = head;
+	head = head->nextPage;
+	tail->nextPage = currPage;
+	tail = currPage;
+	currPage->nextPage = NULL;
+	
+
+	int pageno_to_remove= frame_holds_what[frame_no_toremove]; // what page does the frame hold?
+
+	// get page table entry of that page
+	int frame_toremove; 
+	int frame_toremove_bits;
+
+	page_table_get_entry(pt, pageno_to_remove, &frame_toremove, &frame_toremove_bits ); // info from page table 
+
+
+	// if dirty i.e if it has write access, then have to write this page back in disk and then replace the page
+	if ( (frame_toremove_bits&PROT_WRITE)!=0 )
+	{
+		disk_write( disk,pageno_to_remove, &physmem[(frame_toremove)*PAGE_SIZE] ); // write back page to disk
+		diskWrites++;	
+	}
+
+	page_table_set_entry( pt, pageno_to_remove, 0, 0); // 0's invalidate frame entry of previous page
+
+	page_table_set_entry( pt, page, (frame_toremove), 0|PROT_READ ); // set new page table entry with read permission
+
+	disk_read( disk, page, &physmem[(frame_toremove)*PAGE_SIZE] ); // Read data from disk at virtual address given by 'page' to physical memory frame
+	diskReads++;
+
+
+	// Store info that this page is held in which age frame.
+	// this frame holds this page, inverse of page table.
+	frame_holds_what[(frame_toremove)] = page; // the frame now contains this page.
 }
 
 
@@ -470,4 +555,284 @@ int findnset_free_frame(int *is_frame_occup_struc, int nframes)
 
 	// if no free frame is found, the whole page table is full, return -1
 	return -1;
+}
+
+
+
+
+
+
+
+static int compare_bytes( const void *pa, const void *pb )
+{
+	int a = *(char*)pa;
+	int b = *(char*)pb;
+
+	if(a<b) {
+		return -1;
+	} else if(a==b) {
+		return 0;
+	} else {
+		return 1;
+	}
+
+}
+
+void focus_program( char *data, int length )
+{
+	int total=0;
+	int i,j;
+
+	srand(3829);
+
+	for(i=0;i<length;i++) {
+		data[i] = 0;
+		if ( !strcmp(PRAlgoToUse, "custom") )
+		{
+			int page_accessed = i/PAGE_SIZE;
+
+			prevPage = NULL;
+			currPage = head;
+			while ( currPage != NULL )
+			{
+			
+				if (currPage->page == page_accessed)
+				{
+					// remove page and put and tail
+				
+					if (currPage != tail)
+					{
+						if(currPage != head)
+						{
+							prevPage->nextPage = currPage->nextPage;				
+							currPage->nextPage = tail->nextPage;
+							tail->nextPage = currPage;
+							tail = currPage;
+						}
+						else
+						{
+							head = head->nextPage;
+							tail->nextPage = currPage;
+							currPage->nextPage = NULL;
+						}
+					}
+
+					break;
+				}
+
+				prevPage = currPage;
+				currPage = currPage->nextPage;
+			}
+		}
+
+	}
+
+	for(j=0;j<1000;j++) {
+		int start = rand()%length;
+		int size = 25;
+		for(i=0;i<1000;i++) {
+			data[ (start+rand()%size)%length ] = rand();
+				
+			if ( !strcmp(PRAlgoToUse, "custom") )
+			{
+				int page_accessed = i/PAGE_SIZE;
+
+				prevPage = NULL;
+				currPage = head;
+				while ( currPage != NULL )
+				{
+		
+					if (currPage->page == page_accessed)
+					{
+						// remove page and put and tail
+			
+						if (currPage != tail)
+						{
+							if(currPage != head)
+							{
+								prevPage->nextPage = currPage->nextPage;				
+								currPage->nextPage = tail->nextPage;
+								tail->nextPage = currPage;
+								tail = currPage;
+							}
+							else
+							{
+								head = head->nextPage;
+								tail->nextPage = currPage;
+								currPage->nextPage = NULL;
+							}
+						}
+
+						break;
+					}
+
+					prevPage = currPage;
+					currPage = currPage->nextPage;
+				}
+			}
+		}
+	}
+
+	for(i=0;i<length;i++) {
+		total += data[i];
+
+		if ( !strcmp(PRAlgoToUse, "custom") )
+		{
+			int page_accessed = i/PAGE_SIZE;
+
+			prevPage = NULL;
+			currPage = head;
+			while ( currPage != NULL )
+			{
+			
+				if (currPage->page == page_accessed)
+				{
+					// remove page and put and tail
+				
+					if (currPage != tail)
+					{
+						if(currPage != head)
+						{
+							prevPage->nextPage = currPage->nextPage;				
+							currPage->nextPage = tail->nextPage;
+							tail->nextPage = currPage;
+							tail = currPage;
+						}
+						else
+						{
+							head = head->nextPage;
+							tail->nextPage = currPage;
+							currPage->nextPage = NULL;
+						}
+					}
+
+					break;
+				}
+
+				prevPage = currPage;
+				currPage = currPage->nextPage;
+			}
+		}
+	}
+
+	printf("focus result is %d\n",total);
+}
+
+void sort_program( char *data, int length )
+{
+	int total = 0;
+	int i;
+
+	srand(4856);
+
+	for(i=0;i<length;i++) {
+		data[i] = rand();
+		printf("page accessed: %d\n", i/PAGE_SIZE);
+	}
+
+	qsort(data,length,1,compare_bytes);
+
+	for(i=0;i<length;i++) {
+		total += data[i];
+		printf("page accessed: %d\n", i/PAGE_SIZE);
+	}
+
+	printf("sort result is %d\n",total);
+}
+
+void scan_program( char *cdata, int length )
+{
+	unsigned i, j;
+	unsigned char *data = cdata;
+	unsigned total = 0;
+
+	for(i=0;i<length;i++) {
+		data[i] = i%256;
+
+		if ( !strcmp(PRAlgoToUse, "custom") )
+		{
+			int page_accessed = i/PAGE_SIZE;
+
+			prevPage = NULL;
+			currPage = head;
+			while ( currPage != NULL )
+			{
+			
+				if (currPage->page == page_accessed)
+				{
+					// remove page and put and tail
+				
+					if (currPage != tail)
+					{
+						if(currPage != head)
+						{
+							prevPage->nextPage = currPage->nextPage;				
+							currPage->nextPage = tail->nextPage;
+							tail->nextPage = currPage;
+							tail = currPage;
+						}
+						else
+						{
+							head = head->nextPage;
+							tail->nextPage = currPage;
+							currPage->nextPage = NULL;
+						}
+					}
+
+					break;
+				}
+
+				prevPage = currPage;
+				currPage = currPage->nextPage;
+			}
+		}
+
+	}
+
+	for(j=0;j<5;j++) {
+		for(i=0;i<length;i++) {
+			total += data[i];
+			if ( !strcmp(PRAlgoToUse, "custom") )
+			{
+				int page_accessed = i/PAGE_SIZE;
+
+				prevPage = NULL;
+				currPage = head;
+				while ( currPage != NULL )
+				{
+			
+					if (currPage->page == page_accessed)
+					{
+						// remove page and put and tail
+				
+						if (currPage != tail)
+						{
+							if(currPage != head)
+							{
+								prevPage->nextPage = currPage->nextPage;				
+								currPage->nextPage = tail->nextPage;
+								tail->nextPage = currPage;
+								tail = currPage;
+							}
+							else
+							{
+								head = head->nextPage;
+								tail->nextPage = currPage;
+								currPage->nextPage = NULL;
+							}
+						}
+
+						break;
+					}
+
+					prevPage = currPage;
+					currPage = currPage->nextPage;
+				}
+
+				
+			}
+		}
+	}
+
+	printf("scan result is %d\n",total);
 }

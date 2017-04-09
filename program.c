@@ -4,6 +4,7 @@ Make all of your changes to main.c instead.
 */
 
 #include "program.h"
+#include "page_table.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ void focus_program( char *data, int length )
 
 	for(i=0;i<length;i++) {
 		data[i] = 0;
+		printf("page accessed: %d\n", i/PAGE_SIZE);
 	}
 
 	for(j=0;j<100;j++) {
@@ -39,6 +41,7 @@ void focus_program( char *data, int length )
 		int size = 25;
 		for(i=0;i<100;i++) {
 			data[ (start+rand()%size)%length ] = rand();
+			printf("page accessed: %d\n", i/PAGE_SIZE);
 		}
 	}
 
@@ -58,16 +61,17 @@ void sort_program( char *data, int length )
 
 	for(i=0;i<length;i++) {
 		data[i] = rand();
+		printf("page accessed: %d\n", i/PAGE_SIZE);
 	}
 
 	qsort(data,length,1,compare_bytes);
 
 	for(i=0;i<length;i++) {
 		total += data[i];
+		printf("page accessed: %d\n", i/PAGE_SIZE);
 	}
 
 	printf("sort result is %d\n",total);
-
 }
 
 void scan_program( char *cdata, int length )
@@ -76,13 +80,15 @@ void scan_program( char *cdata, int length )
 	unsigned char *data = cdata;
 	unsigned total = 0;
 
-	for(i=0;i<length;i++) {
+	for(i=0;i<length;i+=PAGE_SIZE) {
 		data[i] = i%256;
+		printf("page accessed: %d\n", i/PAGE_SIZE);
 	}
 
 	for(j=0;j<10;j++) {
-		for(i=0;i<length;i++) {
+		for(i=0;i<length;i+=PAGE_SIZE) {
 			total += data[i];
+			printf("page accessed: %d\n", i/PAGE_SIZE);
 		}
 	}
 
