@@ -359,7 +359,6 @@ void random_pra( struct page_table *pt, int page )
 {
 	int frame_no_toremove= (int)lrand48()%nframes;
 
-	printf("
 
 	int pageno_to_remove= frame_holds_what[frame_no_toremove]; // what page does the frame hold?
 
