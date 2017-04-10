@@ -23,7 +23,7 @@ how to use the page table and disk interfaces.
 
 #include "page_table.h"
 #include "disk.h"
-
+#include "time.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -631,11 +631,12 @@ void focus_program( char *data, int length )
 		int start = rand()%length;
 		int size = 25;
 		for(i=0;i<1000;i++) {
-			data[ (start+rand()%size)%length ] = rand();
+			int index = length-1-(start+rand()%(i+j+2))%length;
+			data[ index ] = rand();
 				
 			if ( !strcmp(PRAlgoToUse, "custom") )
 			{
-				int page_accessed = i/PAGE_SIZE;
+				int page_accessed = (index)/PAGE_SIZE;
 
 				prevPage = NULL;
 				currPage = head;
