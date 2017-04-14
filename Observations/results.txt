@@ -1,0 +1,63 @@
+seed 3829
+
+focus algorithm
+
+pages 23, frames 7
+
+
+random
+Disk Reads: 758
+Disk Writes: 736
+Page Faults: 1494
+
+fifo
+Disk Reads: 756
+Disk Writes: 735
+Page Faults: 1491
+
+
+lru
+Disk Reads: 740
+Disk Writes: 717
+Page Faults: 1457
+
+
+pages 37, frames 21
+random
+Disk Reads: 500
+Disk Writes: 473
+Page Faults: 980
+
+fifo
+Disk Reads: 471
+Disk Writes: 447
+Page Faults: 918
+
+lru
+Disk Reads: 488
+Disk Writes: 460
+Page Faults: 950
+
+
+
+
+
+scan algorithm
+
+pages 37, frames 21
+
+random
+Disk Reads: 168
+Disk Writes: 37
+Page Faults: 205
+
+fifo
+Disk Reads: 222
+Disk Writes: 37
+Page Faults: 259
+
+lru
+Disk Reads: 214
+Disk Writes: 37
+Page Faults: 251
+

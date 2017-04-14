@@ -1,6 +1,6 @@
 /* 
-	Author - Rajdeep Pinge, Aditya Joglekar
-	Time period - March-April, 2017
+	Authors - Rajdeep Pinge, Aditya Joglekar
+	March-April, 2017
 */
 
 
@@ -31,6 +31,8 @@ how to use the page table and disk interfaces.
 #include <errno.h>
 
 
+
+// Global Variables
 int nframes; // stores total number of frames
 int *is_frame_occup_struc = NULL; // pointer to free frame data struc
 int *frame_holds_what = NULL;		// array to maintain which frame holds which physical page
@@ -57,31 +59,37 @@ struct page_node
 }*head, *tail, *currPage, *newPage, *prevPage;
 
 
-//used to track statistics to print at the end
+
+// Variables used to track statistics to print at the end
 int pageFaults = 0;
 int diskReads = 0;
 int diskWrites = 0;
+
+
 
 // function definitions
 int findnset_free_frame(int *is_frame_occup_struc,int nframes);
 void random_pra( struct page_table *pt, int page );
 void fifo_pra( struct page_table *pt, int page);
 void custom_pra( struct page_table *pt, int page);
+void replace_page( struct page_table *pt, int page, int frame_no_toremove );
 
 
 
-
+// function definitions for standard programs to run for testing
 void scan_program( char *data, int length );
 void sort_program( char *data, int length );
 void focus_program( char *data, int length );
+void rearrange_page_list(int i);
+static int compare_bytes( const void *pa, const void *pb );
 
 
 
-
-/* Some definitions
+/* Some miscellaneous definitions
 	pt: pointer to page table
 	page: virtual page requested
 */
+
 
 
 /**************** Version 1 of Page Fault Handler ***********************/
@@ -166,11 +174,11 @@ void page_fault_handler( struct page_table *pt, int page )
 */
 void page_fault_handler( struct page_table *pt, int page )
 {
-    printf("page fault on page #%d\n",page); // print this virtual page is needed
+//    printf("page fault on page #%d\n",page); // print this virtual page is needed
 
 	pageFaults++;							//increment page faults
 
-	// variables to information about the page on which page fault has occured
+	// variables to store information about the page on which page fault has occured
     int curr_bits;
     int curr_frame;
     
@@ -196,6 +204,7 @@ void page_fault_handler( struct page_table *pt, int page )
 				newest_page = (newest_page + 1) % nframes;		// make it a circular queue
 			}
 
+			// if LRU then create a new node for this page in page list
 			if ( !strcmp(PRAlgoToUse, "custom") )
 			{
 				newPage = (struct page_node *) malloc(sizeof(struct page_node));
@@ -223,9 +232,8 @@ void page_fault_handler( struct page_table *pt, int page )
 			frame_holds_what[free_loc] = page; 
 		}
 
-		else		// all frames all full. Need to kick out some page from some frame. Will need page replacement algorithm
+		else		// all frames all full. Need to kick out some page from some frame. Will need page replacement algorithm. Call the page replacement algorithm given by the user.
 		{ 
-			 
 			if (!strcmp(PRAlgoToUse, "rand"))
 			{
 				random_pra(pt, page);
@@ -245,11 +253,8 @@ void page_fault_handler( struct page_table *pt, int page )
 			{
 				printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
 				exit(1);
-			}
-			
+			}			
 		}
-		
-
     }
 
     else // FAULT TYPE 2 - page is in virtual memory but does not have necessary permissions
@@ -258,17 +263,19 @@ void page_fault_handler( struct page_table *pt, int page )
 		if ( ( (curr_bits & PROT_WRITE)==0 ) && ( ( curr_bits & PROT_READ ) ==1 ) )
 		{
 			//OR curr_bits with PROC masks to get 1's at req positions.		   
-			page_table_set_entry( pt, page,curr_frame,curr_bits|PROT_WRITE);  
+			page_table_set_entry( pt, page, curr_frame, curr_bits | PROT_WRITE);  
 		}
 
 		else // has write but not read, may happen though unlikely
 		{
 			// OR with write permission
-			page_table_set_entry( pt, page,curr_frame,(curr_bits)| PROT_READ);
+			page_table_set_entry( pt, page, curr_frame, curr_bits | PROT_READ);
 		}
     }
 
+// For testing purpose
 //	page_table_print(pt);
+
 } 
 
 
@@ -285,7 +292,7 @@ int main( int argc, char *argv[] )
 	int npages = atoi(argv[1]);
 	nframes = atoi(argv[2]);		//made global
 	PRAlgoToUse = argv[3];			// store which page replacement algorithm to use 
-	const char *program = argv[4];
+	const char *program = argv[4];	// store which testing program to run
 
 	
 	is_frame_occup_struc = malloc(nframes * sizeof(int)); // allocate memory for structure storing frame occupation info
@@ -303,7 +310,7 @@ int main( int argc, char *argv[] )
 	}
 
 
-    // initialize the arrays
+    // initialize the arrays to store frame status
     for(int i=0; i < nframes; i++)
     {
        is_frame_occup_struc[i] = 0;  // initially no frame is occupied
@@ -314,15 +321,14 @@ int main( int argc, char *argv[] )
 	// for fifo
 	if ( !strcmp(PRAlgoToUse, "fifo") )
 	{
-		fifo_page_queue = malloc(nframes * sizeof(int));
+		fifo_page_queue = malloc(nframes * sizeof(int));		// allocate memory for fifo queue
 		if(fifo_page_queue == NULL) {
 			printf("Error allocating space for fifo page queue!\n");
 			exit(1);
 		}
 	}
 
-
-	// for LRU
+	// for LRU, initialize pointers to page list
 	if ( !strcmp(PRAlgoToUse, "custom") )
 	{
 		head = NULL;
@@ -370,7 +376,13 @@ int main( int argc, char *argv[] )
 
 	}
 
+
+	//printing final state of the page table
+	printf("--------------------------------------------------------------\n");
+	printf("Final Page Table\n");
 	page_table_print(pt);
+	printf("--------------------------------------------------------------\n");
+
 
 	//print results to user
 	printf("Disk Reads: %d\n", diskReads);
@@ -390,44 +402,16 @@ int main( int argc, char *argv[] )
 }
 
 
+
 /*
 	This function implements random page replacement algorithm when a page fault occurs
 	Algorithm: A random frame is chosen from available frames for replacement and the page that it holds is replaced
 */
-
 void random_pra( struct page_table *pt, int page )
 {
-	int frame_no_toremove= (int)lrand48()%nframes;
+	int frame_no_toremove= (int)lrand48()%nframes;		// select a random frame to remove
 
-
-	int pageno_to_remove= frame_holds_what[frame_no_toremove]; // what page does the frame hold?
-
-	// get page table entry of that page
-	int frame_toremove; 
-	int frame_toremove_bits;
-
-	page_table_get_entry(pt, pageno_to_remove, &frame_toremove, &frame_toremove_bits ); // info from page table 
-
-
-	// if dirty i.e if it has write access, then have to write this page back in disk and then replace the page
-	if ( (frame_toremove_bits&PROT_WRITE)!=0 )
-	{
-		disk_write( disk,pageno_to_remove, &physmem[(frame_toremove)*PAGE_SIZE] ); // write back page to disk
-		diskWrites++;	
-	}
-
-	page_table_set_entry( pt, pageno_to_remove, 0, 0); // 0's invalidate frame entry of previous page
-
-	page_table_set_entry( pt, page, (frame_toremove), 0|PROT_READ ); // set new page table entry with read permission
-
-	disk_read( disk, page, &physmem[(frame_toremove)*PAGE_SIZE] ); // Read data from disk at virtual address given by 'page' to physical memory frame
-	diskReads++;
-
-
-	// Store info that this page is held in which age frame.
-	// this frame holds this page, inverse of page table.
-	frame_holds_what[(frame_toremove)] = page; // the frame now contains this page.
-
+	replace_page(pt, page, frame_no_toremove);
 }
 
 
@@ -438,8 +422,7 @@ void random_pra( struct page_table *pt, int page )
 */ 
 void fifo_pra( struct page_table *pt, int page )
 {
-	int frame_no_toremove= fifo_page_queue[oldest_page];
-
+	int frame_no_toremove= fifo_page_queue[oldest_page];	// select first frame in the queue to replace
 
 	// NOTE here that page will be replaced only if all frames are full
 	// i.e. pointer to newest page location point actually at oldest page which is to be deleted	
@@ -447,62 +430,42 @@ void fifo_pra( struct page_table *pt, int page )
 	// shift oldest_page to next oldest_page so that this page is removed from the queue
 	oldest_page = (oldest_page + 1) % nframes;
 	
+	replace_page(pt, page, frame_no_toremove);
 
-	int pageno_to_remove= frame_holds_what[frame_no_toremove]; // what page does the frame hold?
-
-	// get page table entry of that page
-	int frame_toremove; 
-	int frame_toremove_bits;
-
-	page_table_get_entry(pt, pageno_to_remove, &frame_toremove, &frame_toremove_bits ); // info from page table 
-
-
-	// if dirty i.e if it has write access, then have to write this page back in disk and then replace the page
-	if ( (frame_toremove_bits&PROT_WRITE)!=0 )
-	{
-		disk_write( disk,pageno_to_remove, &physmem[(frame_toremove)*PAGE_SIZE] ); // write back page to disk
-		diskWrites++;	
-	}
-
-	page_table_set_entry( pt, pageno_to_remove, 0, 0); // 0's invalidate frame entry of previous page
-
-	page_table_set_entry( pt, page, (frame_toremove), 0|PROT_READ ); // set new page table entry with read permission
-
-	disk_read( disk, page, &physmem[(frame_toremove)*PAGE_SIZE] ); // Read data from disk at virtual address given by 'page' to physical memory frame
-	diskReads++;
-
-
-	// Store info that this page is held in which age frame.
-	// this frame holds this page, inverse of page table.
-	frame_holds_what[(frame_toremove)] = page; // the frame now contains this page.
-
-
-	fifo_page_queue[newest_page] = frame_toremove;
+	// add the new page at the back of the queue and shift newest_page pointer so that it again points at the location of oldest page which is to be replaced next time.
+	fifo_page_queue[newest_page] = frame_no_toremove;
 	newest_page = (newest_page + 1) % nframes;		// make it a circular queue
 }
 
 
 /*
-	This function implements     ////////////////////  when a page fault occurs
-	Algorithm: 
+	This function implements Least Recently Used (LRU) page replacement algorithm when a page fault occurs
+	Algorithm: Here Linked List approach is used for implementing LRU. 
+		1. If a new page arrives and if there is space in page table, then a new entry is made for that page at the end of the linked list. 
+		2. If a page which is in linked list is referenced again, thenit is put at the end of the list.
+		3. If a new page is arrived and an old page is to be replaced, then the page at the front of the list is replaced and the new page 				is put at the back of the list.
 */ 
 void custom_pra( struct page_table *pt, int page )
 {
-	int frame_no_toremove = head->page;
+	int frame_no_toremove = head->page;			// select first page in the page list (which is least recenly used) for replacement.
 
-
-	// NOTE here that page will be replaced only if all frames are full
-	// i.e. pointer to newest page location point actually at oldest page which is to be deleted	
-
+	// NOTE here that page will be replaced only if all entries in page table are full
+	
 	// shift oldest_page to next oldest_page so that this page is removed from the queue
-
 	currPage = head;
 	head = head->nextPage;
 	tail->nextPage = currPage;
 	tail = currPage;
 	currPage->nextPage = NULL;
 	
+	replace_page(pt, page, frame_no_toremove);
+}
 
+
+
+/* This function replaces the given page (according to page replacement policy) with the new page */
+void replace_page( struct page_table *pt, int page, int frame_no_toremove )
+{
 	int pageno_to_remove= frame_holds_what[frame_no_toremove]; // what page does the frame hold?
 
 	// get page table entry of that page
@@ -559,10 +522,14 @@ int findnset_free_frame(int *is_frame_occup_struc, int nframes)
 
 
 
+/*****************************************************************************************************************************/
+/*****************************************************************************************************************************/
+/************************* Code implementing testing programs for above functional code **************************************/
 
 
 
-
+/* This function compares bytes and returns which one is greater 
+*/
 static int compare_bytes( const void *pa, const void *pb )
 {
 	int a = *(char*)pa;
@@ -578,6 +545,9 @@ static int compare_bytes( const void *pa, const void *pb )
 
 }
 
+
+
+/* Standard program having random data access */
 void focus_program( char *data, int length )
 {
 	int total=0;
@@ -586,43 +556,14 @@ void focus_program( char *data, int length )
 	srand(3829);
 
 	for(i=0;i<length;i++) {
-		data[i] = 0;
+		data[i] = 0;		// write access to memory
+
+		// if LRU we need to re-arrange page list if the page is in the list
 		if ( !strcmp(PRAlgoToUse, "custom") )
 		{
-			int page_accessed = i/PAGE_SIZE;
-
-			prevPage = NULL;
-			currPage = head;
-			while ( currPage != NULL )
-			{
-			
-				if (currPage->page == page_accessed)
-				{
-					// remove page and put and tail
-				
-					if (currPage != tail)
-					{
-						if(currPage != head)
-						{
-							prevPage->nextPage = currPage->nextPage;				
-							currPage->nextPage = tail->nextPage;
-							tail->nextPage = currPage;
-							tail = currPage;
-						}
-						else
-						{
-							head = head->nextPage;
-							tail->nextPage = currPage;
-							currPage->nextPage = NULL;
-						}
-					}
-
-					break;
-				}
-
-				prevPage = currPage;
-				currPage = currPage->nextPage;
-			}
+//			printf("page accessed: %d\n", i/PAGE_SIZE);	
+	
+			rearrange_page_list(i);
 		}
 
 	}
@@ -630,95 +571,39 @@ void focus_program( char *data, int length )
 	for(j=0;j<1000;j++) {
 		int start = rand()%length;
 		int size = 25;
+
 		for(i=0;i<1000;i++) {
 			int index = length-1-(start+rand()%(i+j+2))%length;
-			data[ index ] = rand();
+			data[ index ] = rand();								// write access to memory
 				
+			// if LRU we need to re-arrange page list if the page is in the list
 			if ( !strcmp(PRAlgoToUse, "custom") )
 			{
-				int page_accessed = (index)/PAGE_SIZE;
+//				printf("page accessed: %d\n", index/PAGE_SIZE);
 
-				prevPage = NULL;
-				currPage = head;
-				while ( currPage != NULL )
-				{
-		
-					if (currPage->page == page_accessed)
-					{
-						// remove page and put and tail
-			
-						if (currPage != tail)
-						{
-							if(currPage != head)
-							{
-								prevPage->nextPage = currPage->nextPage;				
-								currPage->nextPage = tail->nextPage;
-								tail->nextPage = currPage;
-								tail = currPage;
-							}
-							else
-							{
-								head = head->nextPage;
-								tail->nextPage = currPage;
-								currPage->nextPage = NULL;
-							}
-						}
-
-						break;
-					}
-
-					prevPage = currPage;
-					currPage = currPage->nextPage;
-				}
+				rearrange_page_list(index);
 			}
 		}
 	}
 
 	for(i=0;i<length;i++) {
-		total += data[i];
+		total += data[i];			// read access to memory
 
+		// if LRU we need to re-arrange page list if the page is in the list
 		if ( !strcmp(PRAlgoToUse, "custom") )
 		{
-			int page_accessed = i/PAGE_SIZE;
-
-			prevPage = NULL;
-			currPage = head;
-			while ( currPage != NULL )
-			{
+//			printf("page accessed: %d\n", i/PAGE_SIZE);
 			
-				if (currPage->page == page_accessed)
-				{
-					// remove page and put and tail
-				
-					if (currPage != tail)
-					{
-						if(currPage != head)
-						{
-							prevPage->nextPage = currPage->nextPage;				
-							currPage->nextPage = tail->nextPage;
-							tail->nextPage = currPage;
-							tail = currPage;
-						}
-						else
-						{
-							head = head->nextPage;
-							tail->nextPage = currPage;
-							currPage->nextPage = NULL;
-						}
-					}
-
-					break;
-				}
-
-				prevPage = currPage;
-				currPage = currPage->nextPage;
-			}
+			rearrange_page_list(i);
 		}
 	}
 
-	printf("focus result is %d\n",total);
+//	printf("focus result is %d\n",total);
 }
 
+
+
+/* Standard program having data access according to a sorted order */
 void sort_program( char *data, int length )
 {
 	int total = 0;
@@ -738,102 +623,90 @@ void sort_program( char *data, int length )
 		printf("page accessed: %d\n", i/PAGE_SIZE);
 	}
 
-	printf("sort result is %d\n",total);
+//	printf("sort result is %d\n",total);
 }
 
+
+
+/* Standard program with sequential data access */
 void scan_program( char *cdata, int length )
 {
 	unsigned i, j;
 	unsigned char *data = cdata;
 	unsigned total = 0;
 
-	for(i=0;i<length;i++) {
+	for(i=0;i<length;i+=PAGE_SIZE) {
+//	for(i=0;i<length;i++) {
 		data[i] = i%256;
 
 		if ( !strcmp(PRAlgoToUse, "custom") )
 		{
-			int page_accessed = i/PAGE_SIZE;
-
-			prevPage = NULL;
-			currPage = head;
-			while ( currPage != NULL )
-			{
-			
-				if (currPage->page == page_accessed)
-				{
-					// remove page and put and tail
-				
-					if (currPage != tail)
-					{
-						if(currPage != head)
-						{
-							prevPage->nextPage = currPage->nextPage;				
-							currPage->nextPage = tail->nextPage;
-							tail->nextPage = currPage;
-							tail = currPage;
-						}
-						else
-						{
-							head = head->nextPage;
-							tail->nextPage = currPage;
-							currPage->nextPage = NULL;
-						}
-					}
-
-					break;
-				}
-
-				prevPage = currPage;
-				currPage = currPage->nextPage;
-			}
+			printf("page accessed: %d\n", i/PAGE_SIZE);
+	
+			rearrange_page_list(i);
 		}
 
 	}
 
 	for(j=0;j<5;j++) {
-		for(i=0;i<length;i++) {
+		for(i=0;i<length;i+=PAGE_SIZE) {
+//		for(i=0;i<length;i++) {
 			total += data[i];
 			if ( !strcmp(PRAlgoToUse, "custom") )
 			{
-				int page_accessed = i/PAGE_SIZE;
-
-				prevPage = NULL;
-				currPage = head;
-				while ( currPage != NULL )
-				{
-			
-					if (currPage->page == page_accessed)
-					{
-						// remove page and put and tail
+				printf("page accessed: %d\n", i/PAGE_SIZE);
 				
-						if (currPage != tail)
-						{
-							if(currPage != head)
-							{
-								prevPage->nextPage = currPage->nextPage;				
-								currPage->nextPage = tail->nextPage;
-								tail->nextPage = currPage;
-								tail = currPage;
-							}
-							else
-							{
-								head = head->nextPage;
-								tail->nextPage = currPage;
-								currPage->nextPage = NULL;
-							}
-						}
-
-						break;
-					}
-
-					prevPage = currPage;
-					currPage = currPage->nextPage;
-				}
-
-				
+				rearrange_page_list(i);
 			}
 		}
 	}
 
-	printf("scan result is %d\n",total);
+//	printf("scan result is %d\n",total);
+}
+
+
+
+/* This function re-arranges the page list by removing existing page from the list and putting it at the tail of the list.
+	This is a requirement for LRU page Replacement algorithm 
+*/
+void rearrange_page_list(int i)
+{
+	int page_accessed = i/PAGE_SIZE;
+
+	//check if page in list. If page not found then there is already a fault which will be handled
+	// if page found the put it at tail i.e. most recently used
+
+	prevPage = NULL;
+	currPage = head;
+
+	while ( currPage != NULL )
+	{
+	
+		if (currPage->page == page_accessed)
+		{
+			// remove page and put and tail
+		
+			if (currPage != tail)
+			{
+				if(currPage != head)
+				{
+					prevPage->nextPage = currPage->nextPage;				
+					currPage->nextPage = tail->nextPage;
+					tail->nextPage = currPage;
+					tail = currPage;
+				}
+				else
+				{
+					head = head->nextPage;
+					tail->nextPage = currPage;
+					currPage->nextPage = NULL;
+				}
+			}
+
+			break;
+		}
+
+		prevPage = currPage;
+		currPage = currPage->nextPage;
+	}
 }

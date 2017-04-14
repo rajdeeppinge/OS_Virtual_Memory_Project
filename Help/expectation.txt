@@ -1,0 +1,21 @@
+The report should have the following.
+
+
+1. What is the proj?
+
+2. Results, demo
+
+3. What do you understand, gain from it?
+
+4. Contribution
+
+5. Why is the topic (e.g Virtual Memory) imp, its necessity for OS?
+
+Lab exam mostly not there
+
+///////
+
+Viva along with proj topic
+
+Read up lab and theory basics and come
+
